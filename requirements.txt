@@ -5,3 +5,4 @@ PyYAML>=6.0
 finance-datareader>=0.9.50
 feedparser>=6.0
 requests>=2.31
+openai>=1.0
