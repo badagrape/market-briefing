@@ -1,0 +1,77 @@
+# 백테스트 설정 - 여기 숫자만 바꿔가며 실험하면 됨
+
+period:
+  start: "2015-01-01"
+  end: null            # null이면 오늘까지
+
+universe:
+  # static = universe.py 의 고정 리스트 (간편하지만 생존 편향 있음)
+  # pit    = 각 리밸런싱 시점의 시총 상위 N개 (편향 제거, 사전 준비 필요)
+  #          먼저 실행:  python universe_history.py --start 2016-01-01 --top 20
+  mode: "static"
+  top: 20
+  market: "KOSPI"
+
+momentum:
+  lookback_days: 252   # 약 12개월 (거래일 기준)
+  skip_days: 21        # 최근 1개월 제외 → 12-1 모멘텀. 0으로 두면 그냥 12개월 모멘텀
+
+market_filter:
+  enabled: true
+  # KOSPI 지수(KS11) 데이터는 FinanceDataReader/pykrx 양쪽에서 최근 조회가
+  # 불안정해서, 대신 KODEX 200 ETF(069500)를 시장 대용으로 쓴다.
+  # KOSPI200은 코스피 시총 상위 200종목으로 전체 시총의 90% 이상을 차지해
+  # 시장 필터 용도로는 사실상 동일하게 움직인다.
+  benchmark: "069500"
+  ma_days: 200         # 지수가 이 이평선 아래면 전량 현금
+
+stock_filter:
+  ma_enabled: true
+  ma_days: 200         # 개별 종목도 이평선 위인 것만
+  ma_slope_days: 20    # 이평선이 N일 전보다 높아야 함. 0이면 기울기 조건 끔
+  require_positive: true   # 절대 모멘텀 - 수익률이 음수면 제외
+
+portfolio:
+  top_n: 15            # 상위 몇 종목 보유
+  rebalance: "ME"      # ME=월말, QE=분기말
+  min_hold_names: 1    # 조건 통과 종목이 이 수 미만이면 그만큼 현금
+
+costs:
+  # 2026년 1월 기준. 세율은 바뀌므로 주기적으로 확인할 것.
+  # 매수: 증권사 수수료만 (거래세 없음)
+  # 매도: 증권거래세 0.20% (코스피=0.05%+농특세0.15%, 코스닥=0.20%) + 수수료
+  buy_bps: 2           # 0.02% - 온라인 수수료. 무료 계좌면 0
+  sell_bps: 22         # 0.22% - 거래세 0.20% + 수수료
+  slippage_bps: 5      # 0.05% 편도. 대장주는 유동성이 좋아 작은 편
+
+output:
+  dir: "results"
+
+context:
+  # 거시지표 (ECOS + FRED). 통계표코드가 바뀔 수 있으니 이상한 값이 나오면
+  # ECOS 사이트에서 직접 검색해 코드를 확인할 것.
+  ecos:
+    base_rate:
+      stat_code: "722Y001"
+      item_code: "0101000"
+      name: "기준금리"
+    usd_krw:
+      stat_code: "731Y001"
+      item_code: "0000001"
+      name: "원/달러 환율"
+  fred:
+    - {series: "DGS10", name: "美 10년물 국채금리"}
+    - {series: "VIXCLS", name: "VIX"}
+    - {series: "DCOILWTICO", name: "WTI 유가"}
+    - {series: "DTWEXBGS", name: "달러인덱스"}
+
+  # 뉴스 RSS. 죽은 피드는 news.py --test 로 확인 후 여기서 정리할 것.
+  # 피드 XML이 깨져 있어도 news.py가 자동 복구를 한 번 시도한다.
+  rss_feeds:
+    - {name: "연합뉴스 경제", url: "https://www.yna.co.kr/rss/economy.xml"}
+    - {name: "매일경제", url: "https://www.mk.co.kr/rss/30100041/"}
+    - {name: "한국경제 경제", url: "https://www.hankyung.com/feed/economy"}
+    - {name: "한국경제 증권", url: "https://www.hankyung.com/feed/finance"}
+    - {name: "아시아경제 증권", url: "https://view.asiae.co.kr/rss/stock.htm"}
+  news_lookback_hours: 24
+  news_max_items: 20
