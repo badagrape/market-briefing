@@ -59,11 +59,31 @@ def section_indicators():
         return
 
     ok = {k: v for k, v in data.items() if "error" not in v}
-    if ok:
-        cols = st.columns(min(len(ok), 4))
-        for i, (nm, v) in enumerate(ok.items()):
-            cols[i % len(cols)].metric(nm, f"{v['value']:,.2f}",
-                                       help=f"기준일 {v['date']} · {v['source']}")
+    if not ok:
+        st.info("수집된 지표가 없습니다.")
+        return
+
+    cols = st.columns(min(len(ok), 3))
+    for i, (nm, v) in enumerate(ok.items()):
+        cur, prev = v["value"], v.get("prev")
+        delta = cur - prev if prev is not None else None
+
+        if delta is not None:
+            delta_str = f"{delta:+.2f}"
+        else:
+            delta_str = None
+
+        cols[i % len(cols)].metric(
+            nm, f"{cur:,.2f}", delta_str,
+            help=f"기준일 {v['date']} · {v['source']}"
+        )
+
+    st.divider()
+    for nm, v in ok.items():
+        interp = v.get("interp", "")
+        if interp:
+            st.caption(f"**{nm}** — {interp}")
+
     st.caption(f"조회: {datetime.now(KST):%m/%d %H:%M} (1시간 캐시)")
 
 
