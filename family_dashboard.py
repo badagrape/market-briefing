@@ -158,10 +158,52 @@ def section_strategy_picks():
         st.write("조건을 만족하는 종목이 없습니다.")
         return
 
-    rows = [{"종목명": sig["names"].get(t, t), "종목코드": t, "모멘텀 점수": sig["scores"][t]} for t in sig["picks"]]
-    df = pd.DataFrame(rows).sort_values("모멘텀 점수", ascending=False)
-    st.dataframe(df.style.format({"모멘텀 점수": "{:+.1%}"}),
-                hide_index=True, use_container_width=True)
+    import urllib.parse
+
+    def claude_url(prompt: str) -> str:
+        """Claude Desktop 딥링크 — 클릭 시 앱이 열리며 프롬프트가 채워짐."""
+        return f"claude://claude.ai/new?q={urllib.parse.quote(prompt)}"
+
+    st.caption("종목명 옆 버튼을 클릭하면 Claude Desktop에서 바로 분석이 시작됩니다 "
+              "(Claude Desktop 앱 필요, 무료).")
+
+    rows = sorted(sig["picks"], key=lambda t: sig["scores"][t], reverse=True)
+
+    for t in rows:
+        nm = sig["names"].get(t, t)
+        score = sig["scores"][t]
+
+        col_nm, col_score, col_a, col_b, col_c = st.columns([3, 1.2, 1.5, 1.5, 1.5])
+        col_nm.write(f"**{nm}** `{t}`")
+        col_score.write(f"{score:+.1%}")
+
+        col_a.link_button("🏢 기업 해독", claude_url(f"{nm} 분석해줘"),
+                          use_container_width=True)
+        col_b.link_button("📖 스토리", claude_url(f"{nm} 스토리 분석해줘"),
+                          use_container_width=True)
+        col_c.link_button("💰 가격 판독", claude_url(f"{nm} 지금 사도 되나?"),
+                          use_container_width=True)
+
+
+def _render_stock_analysis():
+    """OpenAI 기반 종목 분석 — 현재 비활성화 (계정에 크레딧 없음).
+
+    나중에 OpenAI 계정에 결제수단/크레딧을 등록하면 main()에서
+    이 함수 호출 줄의 주석만 풀면 다시 켜진다. analysis_ui.py 등은
+    그대로 남아 있어 코드를 다시 만들 필요 없다.
+    """
+    try:
+        import analysis_ui
+    except ImportError as e:
+        st.caption(f"종목 분석 모듈을 불러오지 못했습니다: {e}")
+        return
+
+    candidates = {}
+    sig, _ = fetch_signal_cached()
+    if sig and sig.get("picks"):
+        candidates = {t: sig["names"].get(t, t) for t in sig["picks"]}
+
+    analysis_ui.section_stock_analysis(candidates, key_prefix="fam_")
 
 
 def main():
@@ -172,6 +214,9 @@ def main():
     st.divider()
     section_strategy_picks()
     st.divider()
+    # OpenAI 크레딧 등록 전까지 비활성화. 다시 쓰려면 아래 줄 주석 해제.
+    # _render_stock_analysis()
+    # st.divider()
     section_news()
 
     st.divider()
