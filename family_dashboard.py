@@ -103,15 +103,16 @@ def section_news():
 def fetch_signal_cached():
     import signal_now
     from run import load_config
+    from universe import name as uname
     try:
         cfg = load_config()
         sig = signal_now.compute_signal(cfg)
-        # Timestamp 등은 캐시 직렬화를 위해 필요한 것만 뽑아 반환
         return {
             "asof": str(sig["asof"].date()),
             "market_pass": sig["market_pass"],
             "picks": sig["picks"],
             "scores": {t: float(sig["scores"][t]) for t in sig["picks"]},
+            "names": {t: uname(t) for t in sig["picks"]},
         }, None
     except Exception as e:
         return None, str(e)
@@ -137,7 +138,7 @@ def section_strategy_picks():
         st.write("조건을 만족하는 종목이 없습니다.")
         return
 
-    rows = [{"종목": t, "모멘텀 점수": sig["scores"][t]} for t in sig["picks"]]
+    rows = [{"종목명": sig["names"].get(t, t), "종목코드": t, "모멘텀 점수": sig["scores"][t]} for t in sig["picks"]]
     df = pd.DataFrame(rows).sort_values("모멘텀 점수", ascending=False)
     st.dataframe(df.style.format({"모멘텀 점수": "{:+.1%}"}),
                 hide_index=True, use_container_width=True)
