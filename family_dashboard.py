@@ -158,31 +158,19 @@ def section_strategy_picks():
         st.write("조건을 만족하는 종목이 없습니다.")
         return
 
-    import urllib.parse
-
-    def claude_url(prompt: str) -> str:
-        """Claude Desktop 딥링크 — 클릭 시 앱이 열리며 프롬프트가 채워짐."""
-        return f"claude://claude.ai/new?q={urllib.parse.quote(prompt)}"
-
+    import claude_buttons
     st.caption("종목명 옆 버튼을 클릭하면 Claude Desktop에서 바로 분석이 시작됩니다 "
               "(Claude Desktop 앱 필요, 무료).")
 
     rows = sorted(sig["picks"], key=lambda t: sig["scores"][t], reverse=True)
-
     for t in rows:
         nm = sig["names"].get(t, t)
-        score = sig["scores"][t]
+        claude_buttons.render_pick_row(nm, t, sig["scores"][t], key_prefix="fam_")
 
-        col_nm, col_score, col_a, col_b, col_c = st.columns([3, 1.2, 1.5, 1.5, 1.5])
-        col_nm.write(f"**{nm}** `{t}`")
-        col_score.write(f"{score:+.1%}")
 
-        col_a.link_button("🏢 기업 해독", claude_url(f"{nm} 분석해줘"),
-                          use_container_width=True)
-        col_b.link_button("📖 스토리", claude_url(f"{nm} 스토리 분석해줘"),
-                          use_container_width=True)
-        col_c.link_button("💰 가격 판독", claude_url(f"{nm} 지금 사도 되나?"),
-                          use_container_width=True)
+def section_stock_search():
+    import claude_buttons
+    claude_buttons.section_stock_search(key_prefix="fam_")
 
 
 def _render_stock_analysis():
@@ -213,6 +201,8 @@ def main():
     section_indicators()
     st.divider()
     section_strategy_picks()
+    st.divider()
+    section_stock_search()
     st.divider()
     # OpenAI 크레딧 등록 전까지 비활성화. 다시 쓰려면 아래 줄 주석 해제.
     # _render_stock_analysis()
