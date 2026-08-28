@@ -51,7 +51,7 @@ def fetch_indicators_cached():
         return None, str(e)
 
 
-def section_indicators():
+def section_indicators(ncols: int = 3, compact: bool = False):
     st.subheader("거시지표")
     data, err = fetch_indicators_cached()
     if data is None:
@@ -63,26 +63,28 @@ def section_indicators():
         st.info("수집된 지표가 없습니다.")
         return
 
-    cols = st.columns(min(len(ok), 3))
+    cols = st.columns(min(len(ok), ncols))
     for i, (nm, v) in enumerate(ok.items()):
         cur, prev = v["value"], v.get("prev")
         delta = cur - prev if prev is not None else None
-
-        if delta is not None:
-            delta_str = f"{delta:+.2f}"
-        else:
-            delta_str = None
+        delta_str = f"{delta:+.2f}" if delta is not None else None
 
         cols[i % len(cols)].metric(
             nm, f"{cur:,.2f}", delta_str,
             help=f"기준일 {v['date']} · {v['source']}"
         )
 
-    st.divider()
-    for nm, v in ok.items():
-        interp = v.get("interp", "")
-        if interp:
-            st.caption(f"**{nm}** — {interp}")
+    # 좁은 칸에서는 해석을 접어둔다 (안 그러면 세로로 너무 길어짐)
+    interps = [(nm, v.get("interp", "")) for nm, v in ok.items() if v.get("interp")]
+    if interps:
+        if compact:
+            with st.expander("지표 해석 보기"):
+                for nm, txt in interps:
+                    st.caption(f"**{nm}** — {txt}")
+        else:
+            st.divider()
+            for nm, txt in interps:
+                st.caption(f"**{nm}** — {txt}")
 
     st.caption(f"조회: {datetime.now(KST):%m/%d %H:%M} (1시간 캐시)")
 
@@ -99,14 +101,14 @@ def fetch_news_cached():
         return None, str(e)
 
 
-def section_news():
+def section_news(limit: int = 15):
     st.subheader("경제 뉴스")
     items, err = fetch_news_cached()
     if not items:
         st.info(f"뉴스를 불러오지 못했습니다: {err or '수집된 기사가 없습니다.'}")
         return
 
-    for it in items[:15]:
+    for it in items[:limit]:
         pub = datetime.fromisoformat(it["published"]).astimezone(KST)
         st.markdown(
             f"**[{it['title']}]({it['link']})**  \n"
@@ -222,7 +224,16 @@ def main():
     st.title("시장 브리핑")
     st.caption("가족과 공유하는 화면입니다. 개인 보유 종목이나 금액 정보는 포함되지 않습니다.")
 
-    section_indicators()
+    # 상단: 거시지표(왼쪽) | 경제뉴스(오른쪽)
+    left, right = st.columns([1, 1], gap="large")
+    with left:
+        section_indicators(ncols=2, compact=True)
+    with right:
+        section_news(limit=8)
+
+    st.divider()
+    section_market_ranking()
+
     st.divider()
     section_strategy_picks()
     st.divider()
@@ -230,14 +241,10 @@ def main():
     st.divider()
     section_investor_trading()
     st.divider()
-    section_market_ranking()
-    st.divider()
     section_stock_search()
-    st.divider()
     # OpenAI 크레딧 등록 전까지 비활성화. 다시 쓰려면 아래 줄 주석 해제.
-    # _render_stock_analysis()
     # st.divider()
-    section_news()
+    # _render_stock_analysis()
 
     st.divider()
     st.caption("이 화면은 참고용입니다. 투자 판단은 각자의 책임입니다.")
