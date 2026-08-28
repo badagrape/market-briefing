@@ -204,6 +204,20 @@ def _render_stock_analysis():
     analysis_ui.section_stock_analysis(candidates, key_prefix="fam_")
 
 
+def section_investor_trading():
+    import investor_trading
+    cands = {}
+    try:
+        import signal_now
+        from universe import name as uname
+        from run import load_config
+        sig = signal_now.compute_signal(load_config())
+        cands = {t: uname(t) for t in sig.get("picks", [])}
+    except Exception:
+        pass
+    investor_trading.section_investor_trading(cands, key_prefix="fam_")
+
+
 def main():
     st.title("시장 브리핑")
     st.caption("가족과 공유하는 화면입니다. 개인 보유 종목이나 금액 정보는 포함되지 않습니다.")
@@ -213,6 +227,8 @@ def main():
     section_strategy_picks()
     st.divider()
     section_realtime_ranking()
+    st.divider()
+    section_investor_trading()
     st.divider()
     section_market_ranking()
     st.divider()
