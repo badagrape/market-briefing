@@ -168,6 +168,11 @@ def section_strategy_picks():
         claude_buttons.render_pick_row(nm, t, sig["scores"][t], key_prefix="fam_")
 
 
+def section_realtime_ranking():
+    import realtime_ranking
+    realtime_ranking.section_realtime_ranking(key_prefix="fam_")
+
+
 def section_market_ranking():
     import market_ranking
     market_ranking.section_market_ranking(key_prefix="fam_", top=300)
@@ -206,6 +211,8 @@ def main():
     section_indicators()
     st.divider()
     section_strategy_picks()
+    st.divider()
+    section_realtime_ranking()
     st.divider()
     section_market_ranking()
     st.divider()
