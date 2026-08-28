@@ -218,6 +218,8 @@ def section_investor_trading():
     except Exception:
         pass
     investor_trading.section_investor_trading(cands, key_prefix="fam_")
+    st.divider()
+    investor_trading.section_investor_ranking(key_prefix="fam_")
 
 
 def main():

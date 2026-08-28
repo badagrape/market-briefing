@@ -159,6 +159,81 @@ def summarize(df: pd.DataFrame, days: int = 5) -> dict:
     return out
 
 
+def _fetch_one_latest(symbol: str, token: str, days: int = 5) -> dict:
+    """한 종목의 최근 N일 누적 순매수. 대량 조회용(내부).
+
+    토큰을 인자로 받아 스레드 간 재발급을 피한다.
+    """
+    import time as _time
+
+    for attempt in range(3):
+        try:
+            r = requests.get(
+                f"{BASE}/api/v1/stocks/{symbol}/investor-trading",
+                headers={"Authorization": f"Bearer {token}",
+                         "Accept": "application/json"},
+                timeout=15)
+        except Exception:
+            return None
+
+        if r.status_code == 429:                 # 요청 한도 → 잠시 쉬고 재시도
+            _time.sleep(float(r.headers.get("Retry-After", 1)) + attempt)
+            continue
+        if r.status_code != 200:
+            return None
+
+        records = (r.json().get("result", {}) or {}).get("records", [])
+        if not records:
+            return None
+
+        recent = records[:days]                  # 응답은 최신순
+        out = {"코드": symbol, "일수": len(recent)}
+        for key, label in INVESTOR_LABELS.items():
+            out[label] = sum(_num(rec.get(key, {}).get("netBuyVolume"))
+                             for rec in recent)
+
+        # 최근일 외국인 지분율
+        fh = recent[0].get("foreignerHolding", {}) or {}
+        held, limit = _num(fh.get("holdingQuantity")), _num(fh.get("limitQuantity"))
+        out["외국인지분율"] = (held / limit * 100) if limit else None
+        return out
+
+    return None
+
+
+def load_bulk(symbols: list, days: int = 5, max_workers: int = 6,
+              secret_getter=None, progress_cb=None) -> pd.DataFrame:
+    """여러 종목의 최근 N일 누적 순매수를 한꺼번에 조회.
+
+    종목당 1회 호출이라 300종목이면 300회다. 데이터가 하루 1회만
+    갱신되므로 호출부에서 일 단위로 캐시하는 것을 전제로 한다.
+    """
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    import toss_api
+
+    cid, sec = _creds(secret_getter)
+    if not cid or not sec:
+        raise RuntimeError("TOSS_CLIENT_ID / TOSS_CLIENT_SECRET 이 필요합니다.")
+
+    token = toss_api.get_access_token(cid, sec)   # 한 번만 발급해 공유
+    rows, done = [], 0
+
+    with ThreadPoolExecutor(max_workers=max_workers) as ex:
+        futures = {ex.submit(_fetch_one_latest, s, token, days): s for s in symbols}
+        for fut in as_completed(futures):
+            res = fut.result()
+            if res:
+                rows.append(res)
+            done += 1
+            if progress_cb:
+                progress_cb(done, len(symbols))
+
+    if not rows:
+        return pd.DataFrame()
+
+    return pd.DataFrame(rows)
+
+
 def section_investor_trading(candidates: dict = None, key_prefix: str = "") -> None:
     """투자자별 매매동향 섹션."""
     import streamlit as st
@@ -248,3 +323,119 @@ def _cached_history(symbol: str, days: int, secret_getter):
         return load_history(sym, d, secret_getter)
 
     return _inner(symbol, days)
+
+
+def section_investor_ranking(key_prefix: str = "", default_top: int = 50) -> None:
+    """시가총액 상위 N종목의 투자자 매매동향 표.
+
+    종목당 1회 호출이라 첫 로딩이 느리다. 데이터가 하루 1회만 갱신되므로
+    12시간 캐시를 걸어 그날 안에는 즉시 뜨게 한다.
+    """
+    import streamlit as st
+
+    st.subheader("투자자별 매매동향 — 상위 종목")
+    st.caption("시가총액 상위 종목의 최근 누적 순매수입니다. "
+              "거래소 장 마감 후 확정치이며 실시간이 아닙니다.")
+
+    def _secret(k):
+        try:
+            if k in st.secrets:
+                return st.secrets[k]
+        except Exception:
+            pass
+        return None
+
+    if not (_secret("TOSS_CLIENT_ID") or os.environ.get("TOSS_CLIENT_ID")):
+        st.info("토스증권 API 키가 설정되면 표시됩니다.")
+        return
+
+    c1, c2, c3 = st.columns([1, 1, 1])
+    top = c1.selectbox("종목 수", [30, 50, 100, 200, 300],
+                       index=[30, 50, 100, 200, 300].index(default_top)
+                       if default_top in (30, 50, 100, 200, 300) else 1,
+                       key=f"{key_prefix}ivr_top",
+                       help="많을수록 첫 로딩이 오래 걸립니다 (종목당 1회 조회)")
+    days = c2.selectbox("누적 기간", [1, 5, 10], index=1,
+                        key=f"{key_prefix}ivr_days")
+    sort_by = c3.selectbox("정렬", ["외국인", "기관", "개인"],
+                           key=f"{key_prefix}ivr_sort")
+
+    # 시가총액 상위 목록 확보
+    try:
+        import market_ranking
+        base, used_date = market_ranking._cached_ranking(max(top, 300))
+        base = base.head(top)
+    except Exception as e:
+        st.error(f"종목 목록을 불러오지 못했습니다: {e}")
+        return
+
+    symbols = base["Code"].tolist()
+    cache_key = f"{top}_{days}"
+
+    if st.button(f"{top}종목 매매동향 불러오기", key=f"{key_prefix}ivr_go",
+                 type="primary"):
+        st.session_state[f"{key_prefix}ivr_run_{cache_key}"] = True
+
+    if not st.session_state.get(f"{key_prefix}ivr_run_{cache_key}"):
+        st.info(f"위 버튼을 누르면 {top}종목을 조회합니다. "
+                f"종목당 1회 호출이라 처음엔 {max(10, top // 5)}초 정도 걸립니다. "
+                "이후에는 캐시에서 즉시 표시됩니다.")
+        return
+
+    bar = st.progress(0.0, text="조회 중...")
+
+    def on_progress(done, total):
+        bar.progress(done / total, text=f"조회 중... {done}/{total}")
+
+    try:
+        df = _cached_bulk(tuple(symbols), days, _secret, on_progress)
+    except Exception as e:
+        bar.empty()
+        st.error(f"조회 실패: {e}")
+        return
+
+    bar.empty()
+
+    if df.empty:
+        st.info("데이터를 가져오지 못했습니다.")
+        return
+
+    # 종목명·업종 붙이기
+    name_map = dict(zip(base["Code"], base["Name"]))
+    ind_map = dict(zip(base["Code"], base["업종"]))
+    df["종목명"] = df["코드"].map(name_map).fillna(df["코드"])
+    df["업종"] = df["코드"].map(ind_map).fillna("")
+
+    df = df.sort_values(sort_by, ascending=False).reset_index(drop=True)
+    df.insert(0, "순위", range(1, len(df) + 1))
+
+    show = df[["순위", "종목명", "코드", "업종",
+               "개인", "외국인", "기관", "기타법인", "외국인지분율"]]
+
+    st.caption(f"{len(show)}종목 · 최근 {days}일 누적 순매수(주) · 기준일 {used_date}")
+    st.dataframe(
+        show, hide_index=True, width="stretch", height=460,
+        column_config={
+            "순위": st.column_config.NumberColumn(width="small"),
+            "개인": st.column_config.NumberColumn(format="%,d"),
+            "외국인": st.column_config.NumberColumn(format="%,d"),
+            "기관": st.column_config.NumberColumn(format="%,d"),
+            "기타법인": st.column_config.NumberColumn(format="%,d"),
+            "외국인지분율": st.column_config.NumberColumn(format="%.2f%%"),
+        },
+    )
+
+    st.caption("양수는 순매수, 음수는 순매도입니다. "
+              "이 수치는 이미 체결된 거래의 집계이며, "
+              "특정 주체의 순매수가 이후 주가를 예측한다는 근거는 확립되어 있지 않습니다.")
+
+
+def _cached_bulk(symbols: tuple, days: int, secret_getter, progress_cb):
+    import streamlit as st
+
+    @st.cache_data(ttl=3600 * 12, show_spinner=False)
+    def _inner(syms, d):
+        return load_bulk(list(syms), d, secret_getter=secret_getter,
+                         progress_cb=progress_cb)
+
+    return _inner(symbols, days)
