@@ -192,7 +192,8 @@ def section_realtime_ranking(key_prefix: str = "") -> None:
         pass
     try:
         import market_ranking
-        base, _ = market_ranking._cached_ranking(500)
+        # 급상승 랭킹엔 소형주가 많다. 업종 매핑 범위를 넓게 잡는다.
+        base, _ = market_ranking._cached_ranking(1500)
         industry_map = dict(zip(base["Code"], base["업종"]))
         if listing is None:
             listing = base[["Code", "Name"]]
@@ -204,8 +205,23 @@ def section_realtime_ranking(key_prefix: str = "") -> None:
     if ranked_at:
         st.caption(f"집계 시각: {ranked_at[:19].replace('T', ' ')}")
 
+    # 업종 필터 — 많이 나온 업종 순으로 정렬해 고르기 쉽게
+    view = df
+    industries = [x for x in df["업종"].unique() if x]
+    if industries:
+        industries.sort(key=lambda s: -(df["업종"] == s).sum())
+        picked_ind = st.selectbox("업종", ["전체"] + industries,
+                                  key=f"{key_prefix}rt_ind")
+        if picked_ind != "전체":
+            view = df[df["업종"] == picked_ind]
+        st.caption(f"{len(view)}종목")
+
+    if view.empty:
+        st.info("해당 업종에 속한 종목이 이 랭킹에 없습니다.")
+        return
+
     st.dataframe(
-        df, hide_index=True, width="stretch", height=420,
+        view, hide_index=True, width="stretch", height=420,
         column_config={
             "순위": st.column_config.NumberColumn(width="small"),
             "현재가": st.column_config.NumberColumn(format="%,d"),
@@ -214,7 +230,7 @@ def section_realtime_ranking(key_prefix: str = "") -> None:
         },
     )
 
-    options = [f"{r.종목명} ({r.코드})" for r in df.head(50).itertuples()]
+    options = [f"{r.종목명} ({r.코드})" for r in view.head(50).itertuples()]
     sel = st.selectbox("이 중에서 분석할 종목", ["(선택 안 함)"] + options,
                        key=f"{key_prefix}rt_pick")
     if sel != "(선택 안 함)":

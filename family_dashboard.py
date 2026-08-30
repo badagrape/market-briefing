@@ -176,6 +176,12 @@ def section_realtime_ranking():
 
 
 def section_market_ranking():
+    """시가총액 순위표 — 현재 미사용.
+
+    실시간 랭킹에 업종 필터를 붙이면서 역할이 겹쳐 화면에서 뺐다.
+    시가총액 기준 정렬이나 300종목 목록이 다시 필요하면
+    main() 에서 이 함수를 호출하면 된다.
+    """
     import market_ranking
     market_ranking.section_market_ranking(key_prefix="fam_", top=300)
 
@@ -232,9 +238,6 @@ def main():
         section_indicators(ncols=2, compact=True)
     with right:
         section_news(limit=8)
-
-    st.divider()
-    section_market_ranking()
 
     st.divider()
     section_strategy_picks()
